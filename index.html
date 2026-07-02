@@ -202,8 +202,8 @@
   <div class="search">
     <input type="text" id="search" placeholder="filter sku_id…">
     <select id="filter">
+      <option value="unreviewed" selected>Unreviewed only</option>
       <option value="all">All</option>
-      <option value="unreviewed">Unreviewed only</option>
       <option value="reviewed">Reviewed only</option>
       <option value="1">Option 1 wins</option>
       <option value="2">Option 2 wins</option>
@@ -231,6 +231,9 @@
 // Paste your Apps Script /exec URL here to skip the connect screen entirely.
 // Leave "" to be asked once (stored in the browser).
 const DEFAULT_SCRIPT_URL="";
+
+// Auto-refresh the sheet every N milliseconds (0 = off). 60000 = every minute.
+const AUTO_REFRESH_MS=60000;
 
 const LS="qc360_pages_v1";
 let SCRIPT_URL="", reviewer="";
@@ -265,6 +268,25 @@ async function refresh(){
     setState("err","load failed");
     banner("Couldn't reach the Apps Script: "+e.message+". Check the URL in Settings and that it's deployed for \"Anyone\".");
   }
+}
+
+// Quiet background sync: keeps the current SKU + your latest pick, merges remote changes.
+async function sync(){
+  if(!SCRIPT_URL||document.hidden)return;
+  try{
+    const res=await fetch(SCRIPT_URL,{method:"GET"});
+    const j=await res.json();
+    if(!j.ok)return;
+    const keepSku=order.length?curRow().sku_id:null;
+    rows=j.skus||[];
+    (j.reviews||[]).forEach(rev=>{
+      if(rev.better==="1"||rev.better==="2")verdicts[rev.sku_id]=rev.better;
+      else delete verdicts[rev.sku_id];
+    });
+    persist(); rebuild();
+    if(keepSku){const oi=order.findIndex(i=>rows[i].sku_id===keepSku);if(oi>=0)cursor=oi;}
+    render(); // loadFrames skips reloading the same spins, so no flicker
+  }catch(e){}
 }
 
 function rebuild(){
@@ -415,6 +437,7 @@ document.addEventListener("keydown",e=>{
   else if(e.key==="Enter"){saveAndNext();e.preventDefault();}
 });
 boot();
+if(AUTO_REFRESH_MS>0)setInterval(sync,AUTO_REFRESH_MS);
 </script>
 </body>
 </html>
