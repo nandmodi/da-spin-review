@@ -65,7 +65,9 @@
   .card .head .spacer{flex:1}
   .card .head .open{font-size:11px;color:var(--muted)}
   .frame-wrap{flex:1;position:relative;background:#05080d;min-height:0}
-  .frame-wrap iframe{width:100%;height:100%;border:0;display:block}
+  .frame-wrap iframe{width:100%;height:100%;border:0;display:block;pointer-events:none}
+  .frame-wrap.live{box-shadow:inset 0 0 0 2px var(--teal)}
+  .frame-wrap.live iframe{pointer-events:auto}
   .frame-wrap .ph{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center;padding:18px}
   .frame-wrap .ph.hide{display:none}
 
@@ -161,12 +163,12 @@
     <div class="card" id="card1">
       <div class="head"><span class="num">1</span><span class="tag">Spin 1 · image_logic</span>
         <div class="spacer"></div><a class="open" id="open1" target="_blank" rel="noopener">open ↗</a></div>
-      <div class="frame-wrap"><div class="ph" id="ph1">loading spin…</div><iframe id="f1"></iframe></div>
+      <div class="frame-wrap" id="w1"><div class="ph" id="ph1">loading spin…</div><iframe id="f1"></iframe></div>
     </div>
     <div class="card" id="card2">
       <div class="head"><span class="num">2</span><span class="tag">Spin 2 · flare</span>
         <div class="spacer"></div><a class="open" id="open2" target="_blank" rel="noopener">open ↗</a></div>
-      <div class="frame-wrap"><div class="ph" id="ph2">loading spin…</div><iframe id="f2"></iframe></div>
+      <div class="frame-wrap" id="w2"><div class="ph" id="ph2">loading spin…</div><iframe id="f2"></iframe></div>
     </div>
   </div>
 
@@ -176,11 +178,11 @@
       <span class="lbl">Better</span>
       <div class="cbx" id="cbx1">
         <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#04211d" stroke-width="3.5"><path d="M4 12l5 5L20 6"/></svg></span>
-        <span class="txt">Checkbox 1</span><span class="sub">spin 1</span>
+        <span class="txt">Image_logic</span><span class="sub">spin 1</span>
       </div>
       <div class="cbx" id="cbx2">
         <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#04211d" stroke-width="3.5"><path d="M4 12l5 5L20 6"/></svg></span>
-        <span class="txt">Checkbox 2</span><span class="sub">spin 2</span>
+        <span class="txt">Flare</span><span class="sub">spin 2</span>
       </div>
     </div>
     <div class="nav">
@@ -189,6 +191,10 @@
     </div>
   </div>
 </main>
+
+<div style="position:absolute;width:0;height:0;overflow:hidden;opacity:0;pointer-events:none" aria-hidden="true">
+  <iframe id="pf1"></iframe><iframe id="pf2"></iframe>
+</div>
 
 <div class="scrim" id="scrim"></div>
 <div class="drawer" id="drawer">
@@ -222,13 +228,17 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// Paste your Apps Script /exec URL here to skip the connect screen entirely.
+// Leave "" to be asked once (stored in the browser).
+const DEFAULT_SCRIPT_URL="";
+
 const LS="qc360_pages_v1";
 let SCRIPT_URL="", reviewer="";
 let rows=[], verdicts={}, order=[], cursor=0;
 const $=id=>document.getElementById(id);
 
 function loadCfg(){try{const c=JSON.parse(localStorage.getItem(LS)||"{}");
-  SCRIPT_URL=c.scriptUrl||"";reviewer=c.reviewer||"";verdicts=c.verdicts||{};}catch(e){}}
+  SCRIPT_URL=c.scriptUrl||DEFAULT_SCRIPT_URL||"";reviewer=c.reviewer||"";verdicts=c.verdicts||{};}catch(e){SCRIPT_URL=DEFAULT_SCRIPT_URL||"";}}
 function persist(){localStorage.setItem(LS,JSON.stringify({scriptUrl:SCRIPT_URL,reviewer,verdicts}));}
 
 function boot(){
@@ -277,6 +287,7 @@ function renderList(){
     d.className="item"+((v==="1"||v==="2")?" done":"")+(oi===cursor?" active":"");
     d.innerHTML='<span class="dot"></span><span class="sku">'+r.sku_id+'</span><span class="win">'+(v||"")+'</span>';
     d.onclick=()=>{cursor=oi;render();closeDrawer();};
+    d.onmouseenter=()=>prefetchUrls(r);
     frag.appendChild(d);});
   el.appendChild(frag);
 }
@@ -301,9 +312,25 @@ function render(){
   loadFrames(r); paintVerdict();
   [...$("list").children].forEach((c,i)=>c.classList.toggle("active",i===cursor));
   const act=$("list").children[cursor]; if(act)act.scrollIntoView({block:"nearest"});
+  prefetchNext();
+}
+function prefetchUrls(r){
+  if(!r)return;
+  if(r.image_logic_iframe_url&&$("pf1").src!==r.image_logic_iframe_url)$("pf1").src=r.image_logic_iframe_url;
+  if(r.flare_iframe_url&&$("pf2").src!==r.flare_iframe_url)$("pf2").src=r.flare_iframe_url;
+}
+function prefetchNext(){
+  const ni=order[cursor+1]; if(ni==null)return;
+  prefetchUrls(rows[ni]);
+}
+function activatePanel(n){
+  $("w1").classList.toggle("live",n===1);
+  $("w2").classList.toggle("live",n===2);
 }
 function loadFrames(r){
-  const set=(f,ph,url)=>{ph.classList.remove("hide");ph.textContent="loading spin…";
+  const set=(f,ph,url)=>{
+    if(url&&f.src===url){ph.classList.add("hide");return;}   // already loaded — no reload
+    ph.classList.remove("hide");ph.textContent="loading spin…";
     f.onload=()=>ph.classList.add("hide");
     if(url)f.src=url;else{f.src="about:blank";ph.textContent="(no url)";}};
   set($("f1"),$("ph1"),r.image_logic_iframe_url);
@@ -373,6 +400,9 @@ $("exportBtn").onclick=exportCSV;
 $("reloadFrames").onclick=()=>{const r=curRow();if(r)loadFrames(r);};
 $("copySku").onclick=()=>{const r=curRow();if(r){navigator.clipboard.writeText(r.sku_id);toast("sku_id copied");}};
 $("reviewer").onchange=()=>{reviewer=$("reviewer").value.trim();persist();};
+
+$("w1").addEventListener("mouseenter",()=>activatePanel(1));
+$("w2").addEventListener("mouseenter",()=>activatePanel(2));
 
 document.addEventListener("keydown",e=>{
   if(/input|textarea|select/i.test(e.target.tagName))return;
